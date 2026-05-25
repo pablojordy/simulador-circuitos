@@ -1,262 +1,391 @@
 import streamlit as st
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from fpdf import FPDF
 import os
 
-# --- ARQUITETURA DA INTERFACE PROFISSIONAL ---
+# =========================================================
+# CONFIGURAÇÃO DA PÁGINA
+# =========================================================
+
 st.set_page_config(
-    page_title="Laboratório de Análise de Circuitos RLC",
+    page_title="RLC LAB",
     page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# Design de UI Industrial (Removendo traços comuns de templates de IA)
+# =========================================================
+# CSS PROFISSIONAL
+# =========================================================
+
 st.markdown("""
-    <style>
-    /* Estilização Global e Botões de Seleção Tipo "Cards" */
-    .stRadio div[role="radiogroup"] { flex-direction: row; gap: 10px; }
-    div[data-testid="stMarkdownContainer"] h1 { font-family: 'Courier New', Courier, monospace; color: #1E293B; }
-    
-    .panel-tecnico {
-        background-color: #ffffff;
-        padding: 20px;
-        border-radius: 6px;
-        border: 1px solid #E2E8F0;
-        font-family: monospace;
-    }
-    .metric-value {
-        font-size: 24px;
-        font-weight: bold;
-        color: #0F172A;
-    }
-    .metric-unit {
-        font-size: 14px;
-        color: #64748B;
-    }
-    </style>
+<style>
+
+.main {
+    background-color: #F5F7FA;
+}
+
+h1, h2, h3 {
+    color: #0F172A;
+}
+
+[data-testid="stSidebar"] {
+    background-color: #111827;
+}
+
+[data-testid="stSidebar"] * {
+    color: white;
+}
+
+.metric-card {
+    background: white;
+    padding: 18px;
+    border-radius: 12px;
+    border: 1px solid #E5E7EB;
+    box-shadow: 0px 2px 6px rgba(0,0,0,0.05);
+    text-align: center;
+}
+
+.metric-value {
+    font-size: 30px;
+    font-weight: bold;
+    color: #111827;
+}
+
+.metric-label {
+    font-size: 14px;
+    color: #6B7280;
+}
+
+.block {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid #E5E7EB;
+    margin-bottom: 20px;
+}
+
+</style>
 """, unsafe_allow_html=True)
 
-st.title("⚙️ INSTRUMENTAÇÃO E SIMULAÇÃO DE MALHAS RLC")
-st.caption("Ambiente de homologação e análise vetorial de circuitos passivos em regime permanente senoidal.")
-st.write("---")
+# =========================================================
+# TÍTULO
+# =========================================================
 
-# --- CONSTRUÇÃO DA BANCADA DE TRABALHO (SIDEBAR) ---
-st.sidebar.header("🕹️ PAINEL DE CONTROLE DE HARDWARE")
+st.title("⚡ RLC LAB — Simulador de Circuitos")
+st.caption("Análise de circuitos RLC em regime permanente senoidal")
 
-# Alterado para Botões de Seleção Avançados (Grid de Opções)
-tipo_circuito = st.sidebar.radio(
-    "TOPOLOGIA DA REDE:",
-    ["Série", "Paralelo"],
-    help="Define o arranjo de conexões dos nós da malha."
+# =========================================================
+# SIDEBAR
+# =========================================================
+
+st.sidebar.header("CONFIGURAÇÕES")
+
+tipo = st.sidebar.selectbox(
+    "Topologia",
+    ["Série", "Paralelo"]
 )
 
-st.sidebar.write("---")
-st.sidebar.subheader("🔌 FONTE DE ALIMENTAÇÃO CA")
+st.sidebar.subheader("Fonte CA")
 
-# Botões de seleção rápida para Tensões Comerciais de mercado
-v_comercial = st.sidebar.selectbox(
-    "Selecione a Tensão (V_rms):",
-    ["Personalizado", "12V (Sinal/Controle)", "127V (Residencial)", "220V (Bifásico)", "380V (Industrial)"]
+V_rms = st.sidebar.number_input(
+    "Tensão RMS (V)",
+    min_value=1.0,
+    value=127.0
 )
 
-if v_comercial == "Personalizado":
-    V_rms = st.sidebar.slider("Ajuste Fino de Tensão (V)", min_value=1.0, max_value=440.0, value=127.0, step=1.0)
-else:
-    V_rms = float(v_comercial.split("V")[0])
-
-# Botões de seleção para frequências padrões de rede e laboratório
-f_comercial = st.sidebar.selectbox(
-    "Frequência da Rede (Hz):",
-    ["60 Hz (Padrão BR)", "50 Hz (Padrão Europeu)", "1000 Hz (Áudio/Laboratório)", "Personalizada"]
+freq = st.sidebar.number_input(
+    "Frequência (Hz)",
+    min_value=1.0,
+    value=60.0
 )
 
-if f_comercial == "Personalizada":
-    freq = st.sidebar.slider("Ajuste Fino de Frequência (Hz)", min_value=1.0, max_value=5000.0, value=60.0, step=10.0)
-else:
-    freq = float(f_comercial.split(" Hz")[0])
+st.sidebar.subheader("Componentes")
 
-st.sidebar.write("---")
-st.sidebar.subheader("🧰 COMPONENTES DA BANCADA")
+R = st.sidebar.number_input(
+    "Resistência R (Ω)",
+    min_value=0.0,
+    value=100.0
+)
 
-# Modificado para caixas estruturadas com botões de incremento precisos
-with st.sidebar.expander("Resistor (R)", expanded=True):
-    com_R = st.checkbox("Acoplar Resistor à malha", value=True)
-    R_val = st.number_input("Valor da Resistência (Ω)", min_value=0.1, max_value=10000.0, value=50.0, step=5.0) if com_R else 0.0
+L_mH = st.sidebar.number_input(
+    "Indutância L (mH)",
+    min_value=0.0,
+    value=100.0
+)
 
-with st.sidebar.expander("Indutor (L)", expanded=True):
-    com_L = st.checkbox("Acoplar Indutor à malha", value=True)
-    L_val = st.number_input("Valor da Indutância (mH)", min_value=0.1, max_value=5000.0, value=300.0, step=10.0) if com_L else 0.0
+C_uF = st.sidebar.number_input(
+    "Capacitância C (µF)",
+    min_value=0.0,
+    value=47.0
+)
 
-with st.sidebar.expander("Capacitor (C)", expanded=True):
-    com_C = st.checkbox("Acoplar Capacitor à malha", value=True)
-    C_val = st.number_input("Valor da Capacitância (µF)", min_value=0.1, max_value=2000.0, value=47.0, step=1.0) if com_C else 0.0
+# =========================================================
+# CONVERSÕES
+# =========================================================
 
-if not com_R and not com_L and not com_C:
-    st.error("❌ Erro de Hardware: Nenhum componente conectado. Acople pelo menos um elemento na sidebar.")
-    st.stop()
+L = L_mH / 1000
+C = C_uF / 1e6
 
-# --- LÓGICA MATEMÁTICA DE ENGENHARIA ---
 omega = 2 * np.pi * freq
-X_L = omega * (L_val / 1000.0) if com_L else 0.0
-X_C = 1.0 / (omega * (C_val / 1000000.0)) if com_C else 0.0
 
-Z_R = complex(R_val, 0)
-Z_L = complex(0, X_L)
-Z_C = complex(0, -X_C)
+# =========================================================
+# REATÂNCIAS
+# =========================================================
 
-if tipo_circuito == "Série":
-    Z_tot = (Z_R if com_R else 0j) + (Z_L if com_L else 0j) + (Z_C if com_C else 0j)
-    I_tot = V_rms / Z_tot if abs(Z_tot) > 0 else 0j
-    V_R = I_tot * Z_R if com_R else 0j
-    V_L = I_tot * Z_L if com_L else 0j
-    V_C = I_tot * Z_C if com_C else 0j
-    correntes = {"Total": I_tot, "R": I_tot, "L": I_tot, "C": I_tot}
-    tensoes = {"Total": complex(V_rms, 0), "R": V_R, "L": V_L, "C": V_C}
+Xl = omega * L if L > 0 else 0
+Xc = 1 / (omega * C) if C > 0 else 0
+
+Zr = complex(R, 0)
+Zl = complex(0, Xl)
+Zc = complex(0, -Xc)
+
+# =========================================================
+# CÁLCULOS
+# =========================================================
+
+if tipo == "Série":
+
+    Z_total = Zr + Zl + Zc
+
+    I_total = V_rms / Z_total if abs(Z_total) > 0 else 0
+
+    V_R = I_total * Zr
+    V_L = I_total * Zl
+    V_C = I_total * Zc
+
 else:
-    Y_R = 1.0 / Z_R if (com_R and R_val > 0) else 0j
-    Y_L = 1.0 / Z_L if (com_L and X_L > 0) else 0j
-    Y_C = 1.0 / Z_C if (com_C and X_C > 0) else 0j
-    Y_tot = Y_R + Y_L + Y_C
-    Z_tot = 1.0 / Y_tot if abs(Y_tot) > 0 else complex(1e9, 0)
-    I_tot = V_rms * Y_tot
-    I_R = V_rms / Z_R if com_R else 0j
-    I_L = V_rms / Z_L if com_L else 0j
-    I_C = V_rms / Z_C if com_C else 0j
-    correntes = {"Total": I_tot, "R": I_R, "L": I_L, "C": I_C}
-    tensoes = {"Total": complex(V_rms, 0), "R": complex(V_rms, 0), "L": complex(V_rms, 0), "C": complex(V_rms, 0)}
 
-if abs(I_tot) < 1e-6: I_tot = 0j
+    Y_total = 0
 
-# --- DISPOSIÇÃO DO WORKSPACE ---
-col_esquema, col_dados = st.columns([1, 2])
+    if R > 0:
+        Y_total += 1 / Zr
 
-with col_esquema:
-    st.write("### 📐 Esquema de Ligação")
-    
-    # Gerador de Diagrama de Blocos Esquemático Dinâmico (Muda baseado na seleção do usuário)
-    fig_esq, ax_esq = plt.subplots(figsize=(4, 3))
-    ax_esq.set_xlim(-1, 5)
-    ax_esq.set_ylim(-2, 2)
-    ax_esq.axis('off')
-    
-    # Desenho básico da fonte
-    ax_esq.plot([0, 0], [-1, 1], color='#0F172A', lw=2)
-    ax_esq.text(-0.5, 0, f" Fonte CA\n {V_rms}V", fontsize=9, fontweight='bold')
-    
-    if tipo_circuito == "Série":
-        # Linhas de conexão série
-        ax_esq.plot([0, 4, 4, 0, 0], [1, 1, -1, -1, -1], color='#64748B', lw=1.5, ls='--')
-        pos_x = 1.0
-        if com_R:
-            ax_esq.凜ectangle = plt.Rectangle((pos_x, 0.7), 0.6, 0.6, facecolor='#EF4444', edgecolor='black')
-            ax_esq.add_patch(ax_esq.凜ectangle); ax_esq.text(pos_x, 1.4, f"R\n{R_val}Ω", fontsize=8); pos_x += 1.0
-        if com_L:
-            ax_esq.凜ectangle = plt.Rectangle((pos_x, 0.7), 0.6, 0.6, facecolor='#10B981', edgecolor='black')
-            ax_esq.add_patch(ax_esq.凜ectangle); ax_esq.text(pos_x, 1.4, f"L\n{L_val}mH", fontsize=8); pos_x += 1.0
-        if com_C:
-            ax_esq.凜ectangle = plt.Rectangle((pos_x, 0.7), 0.6, 0.6, facecolor='#3B82F6', edgecolor='black')
-            ax_esq.add_patch(ax_esq.凜ectangle); ax_esq.text(pos_x, 1.4, f"C\n{C_val}µF", fontsize=8)
-    else:
-        # Linhas de conexão paralelo
-        ax_esq.plot([0, 3.5], [1, 1], color='#64748B', lw=1.5)
-        ax_esq.plot([0, 3.5], [-1, -1], color='#64748B', lw=1.5)
-        pos_x = 1.2
-        if com_R:
-            ax_esq.plot([pos_x, pos_x], [1, -1], color='#EF4444', lw=3); ax_esq.text(pos_x+0.1, 0, f"R ({R_val}Ω)", fontsize=8); pos_x += 1.0
-        if com_L:
-            ax_esq.plot([pos_x, pos_x], [1, -1], color='#10B981', lw=3); ax_esq.text(pos_x+0.1, 0, f"L ({L_val}H)", fontsize=8); pos_x += 1.0
-        if com_C:
-            ax_esq.plot([pos_x, pos_x], [1, -1], color='#3B82F6', lw=3); ax_esq.text(pos_x+0.1, 0, f"C ({C_val}F)", fontsize=8)
+    if Xl > 0:
+        Y_total += 1 / Zl
 
-    st.pyplot(fig_esq)
-    plt.close(fig_esq)
+    if Xc > 0:
+        Y_total += 1 / Zc
 
-with col_dados:
-    st.write("### 📋 Leituras do Barramento Principal")
-    
-    # Telemetria Avançada Estilo Painel de Controle de Laboratório (Clean UI)
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.markdown(f'<div class="panel-tecnico">IMPEDÂNCIA DO SISTEMA<br><span class="metric-value">{abs(Z_tot):.2f}</span> <span class="metric-unit">Ω</span><br><small>Fase: {np.degrees(np.angle(Z_tot)):.1f}°</small></div>', unsafe_allow_html=True)
-    with m2:
-        st.markdown(f'<div class="panel-tecnico">CORRENTE EFICAZ (RMS)<br><span class="metric-value">{abs(I_tot):.3f}</span> <span class="metric-unit">A</span><br><small>Fase: {np.degrees(np.angle(I_tot)):.1f}°</small></div>', unsafe_allow_html=True)
-    with m3:
-        fp = np.cos(np.angle(Z_tot))
-        caracter = "INDUTIVO" if np.angle(Z_tot) > 0.01 else "CAPACITIVO" if np.angle(Z_tot) < -0.01 else "RESISTIVO"
-        st.markdown(f'<div class="panel-tecnico">FATOR DE POTÊNCIA<br><span class="metric-value">{fp:.3f}</span><br><small>Caráter: {caracter}</small></div>', unsafe_allow_html=True)
+    Z_total = 1 / Y_total if Y_total != 0 else complex(0)
 
-# Tabela e Gráficos Vetoriais organizados abaixo do painel
-st.write("---")
-tab_tabela, tab_graficos = st.tabs(["📋 Planilha de Dados", "🧭 Diagramas Vetoriais Fasoriais"])
+    I_total = V_rms / Z_total if Z_total != 0 else 0
 
-with tab_tabela:
-    linhas_tabela = [["Componente de Ramo", "Impedância Linear (Ω)", "Corrente Eficaz (A)", "Queda de Tensão (V)", "Ângulo de Fase (°)"]]
-    if com_R: linhas_tabela.append(["Resistor (R)", f"{R_val:.2f} Ω", f"{abs(correntes['R']):.3f} A", f"{abs(tensoes['R']):.2f} V", f"{np.degrees(np.angle(tensoes['R'])):.1f}°"])
-    if com_L: linhas_tabela.append(["Indutor (L)", f"{X_L:.2f} Ω", f"{abs(correntes['L']):.3f} A", f"{abs(tensoes['L']):.2f} V", f"{np.degrees(np.angle(tensoes['L'])):.1f}°"])
-    if com_C: linhas_tabela.append(["Capacitor (C)", f"{X_C:.2f} Ω", f"{abs(correntes['C']):.3f} A", f"{abs(tensoes['C']):.2f} V", f"{np.degrees(np.angle(tensoes['C'])):.1f}°"])
-    st.table(linhas_tabela)
+    V_R = complex(V_rms, 0)
+    V_L = complex(V_rms, 0)
+    V_C = complex(V_rms, 0)
 
-with tab_graficos:
-    g1, g2 = st.columns(2)
-    with g1:
-        fig_v, ax_v = plt.subplots(figsize=(4, 4))
-        ax_v.axhline(0, color='black', lw=0.5, ls=':'); ax_v.axvline(0, color='black', lw=0.5, ls=':')
-        if com_R and abs(tensoes['R']) > 1e-2: ax_v.quiver(0, 0, tensoes['R'].real, tensoes['R'].imag, angles='xy', scale_units='xy', scale=1, color='#EF4444', label='V_R')
-        if com_L and abs(tensoes['L']) > 1e-2: ax_v.quiver(0, 0, tensoes['L'].real, tensoes['L'].imag, angles='xy', scale_units='xy', scale=1, color='#10B981', label='V_L')
-        if com_C and abs(tensoes['C']) > 1e-2: ax_v.quiver(0, 0, tensoes['C'].real, tensoes['C'].imag, angles='xy', scale_units='xy', scale=1, color='#3B82F6', label='V_C')
-        ax_v.quiver(0, 0, tensoes['Total'].real, tensoes['Total'].imag, angles='xy', scale_units='xy', scale=1, color='#0F172A', label='V_Total', width=0.007)
-        lim_v = max(max(abs(tensoes['R']), abs(tensoes['L']), abs(tensoes['C']), V_rms), 1.0) * 1.2
-        ax_v.set_xlim(-lim_v, lim_v); ax_v.set_ylim(-lim_v, lim_v); ax_v.set_aspect('equal'); ax_v.grid(True, alpha=0.2); ax_v.legend(); ax_v.set_title("Fasores de Tensão (V)")
-        st.pyplot(fig_v)
-        plt.savefig("fasor_v.png", bbox_inches='tight'); plt.close(fig_v)
-        
-    with g2:
-        fig_i, ax_i = plt.subplots(figsize=(4, 4))
-        ax_i.axhline(0, color='black', lw=0.5, ls=':'); ax_i.axvline(0, color='black', lw=0.5, ls=':')
-        if com_R and abs(correntes['R']) > 1e-3: ax_i.quiver(0, 0, correntes['R'].real, correntes['R'].imag, angles='xy', scale_units='xy', scale=1, color='#EF4444', label='I_R')
-        if com_L and abs(correntes['L']) > 1e-3: ax_i.quiver(0, 0, correntes['L'].real, correntes['L'].imag, angles='xy', scale_units='xy', scale=1, color='#10B981', label='I_L')
-        if com_C and abs(correntes['C']) > 1e-3: ax_i.quiver(0, 0, correntes['C'].real, correntes['C'].imag, angles='xy', scale_units='xy', scale=1, color='#3B82F6', label='I_C')
-        if abs(I_tot) > 1e-3: ax_i.quiver(0, 0, correntes['Total'].real, correntes['Total'].imag, angles='xy', scale_units='xy', scale=1, color='#0F172A', label='I_Total', width=0.007)
-        lim_i = max(max(abs(correntes['R']), abs(correntes['L']), abs(correntes['C']), abs(I_tot)), 0.1) * 1.2
-        ax_i.set_xlim(-lim_i, lim_i); ax_i.set_ylim(-lim_i, lim_i); ax_i.set_aspect('equal'); ax_i.grid(True, alpha=0.2); ax_i.legend(); ax_i.set_title("Fasores de Corrente (A)")
-        st.pyplot(fig_i)
-        plt.savefig("fasor_i.png", bbox_inches='tight'); plt.close(fig_i)
+# =========================================================
+# POTÊNCIAS
+# =========================================================
 
-# --- ENGINE EXPORTAÇÃO PDF PARALELA ---
-def construir_pdf():
+S = V_rms * np.conj(I_total)
+P = S.real
+Q = S.imag
+FP = np.cos(np.angle(Z_total))
+
+# =========================================================
+# RESSONÂNCIA
+# =========================================================
+
+f_res = None
+
+if L > 0 and C > 0:
+    f_res = 1 / (2 * np.pi * np.sqrt(L * C))
+
+# =========================================================
+# CLASSIFICAÇÃO
+# =========================================================
+
+angulo = np.degrees(np.angle(Z_total))
+
+if angulo > 1:
+    comportamento = "INDUTIVO"
+
+elif angulo < -1:
+    comportamento = "CAPACITIVO"
+
+else:
+    comportamento = "RESISTIVO"
+
+# =========================================================
+# MÉTRICAS
+# =========================================================
+
+c1, c2, c3, c4 = st.columns(4)
+
+with c1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">|Z|</div>
+        <div class="metric-value">{abs(Z_total):.2f} Ω</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Corrente RMS</div>
+        <div class="metric-value">{abs(I_total):.3f} A</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c3:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Fator de Potência</div>
+        <div class="metric-value">{FP:.3f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c4:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Comportamento</div>
+        <div class="metric-value">{comportamento}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# =========================================================
+# TABS
+# =========================================================
+
+tab1, tab2, tab3 = st.tabs([
+    "📊 Resultados",
+    "🧭 Fasores",
+    "📄 Relatório"
+])
+
+# =========================================================
+# RESULTADOS
+# =========================================================
+
+with tab1:
+
+    st.subheader("Resultados Elétricos")
+
+    dados = pd.DataFrame({
+        "Parâmetro": [
+            "Resistência",
+            "Reatância Indutiva",
+            "Reatância Capacitiva",
+            "Impedância Total",
+            "Ângulo de Fase",
+            "Potência Ativa",
+            "Potência Reativa",
+            "Potência Aparente"
+        ],
+
+        "Valor": [
+            f"{R:.2f} Ω",
+            f"{Xl:.2f} Ω",
+            f"{Xc:.2f} Ω",
+            f"{abs(Z_total):.2f} Ω",
+            f"{angulo:.2f} °",
+            f"{P:.2f} W",
+            f"{Q:.2f} var",
+            f"{abs(S):.2f} VA"
+        ]
+    })
+
+    st.dataframe(dados, use_container_width=True)
+
+    if f_res:
+        st.info(f"Frequência de ressonância: {f_res:.2f} Hz")
+
+# =========================================================
+# FASORES
+# =========================================================
+
+with tab2:
+
+    st.subheader("Diagrama Fasorial")
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    ax.axhline(0, color='black')
+    ax.axvline(0, color='black')
+
+    ax.quiver(
+        0,
+        0,
+        Z_total.real,
+        Z_total.imag,
+        angles='xy',
+        scale_units='xy',
+        scale=1,
+        label='Z total'
+    )
+
+    ax.grid(True)
+
+    limite = max(abs(Z_total.real), abs(Z_total.imag), 1)
+
+    ax.set_xlim(-limite * 1.3, limite * 1.3)
+    ax.set_ylim(-limite * 1.3, limite * 1.3)
+
+    ax.set_xlabel("Parte Real")
+    ax.set_ylabel("Parte Imaginária")
+
+    ax.legend()
+
+    st.pyplot(fig)
+
+# =========================================================
+# RELATÓRIO PDF
+# =========================================================
+
+def gerar_pdf():
+
     pdf = FPDF()
-    pdf.add_page()
-    pdf.set_fill_color(245, 247, 250)
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(190, 12, "MEMORIAL DE CONFIGURACAO E CALCULO ELETRICO", ln=True, align="C", fill=True)
-    pdf.ln(5)
-    pdf.set_font("Arial", "B", 11)
-    pdf.cell(190, 8, "1. Especificacoes Gerais de Hardware:", ln=True)
-    pdf.set_font("Arial", "", 10)
-    pdf.cell(190, 6, f"  Topologia de Malha: Circuito {tipo_circuito}", ln=True)
-    pdf.cell(190, 6, f"  Tensao Nominal de Entrada: {V_rms:.1f} V_rms | Frequencia: {freq:.1f} Hz", ln=True)
-    pdf.cell(190, 6, f"  Valores Fixados: R={R_val} Ohm | L={L_val} mH | C={C_val} uF", ln=True)
-    pdf.ln(4)
-    pdf.set_font("Arial", "B", 11)
-    pdf.cell(190, 8, "2. Resultados Globais:", ln=True)
-    pdf.set_font("Arial", "", 10)
-    pdf.cell(190, 6, f"  Impedancia Equivalente complexa: {abs(Z_tot):.2f} Ohm (Fase: {np.degrees(np.angle(Z_tot)):.1f}*)", ln=True)
-    pdf.cell(190, 6, f"  Corrente Total Circulante: {abs(I_tot):.3f} A", ln=True)
-    pdf.cell(190, 6, f"  Fator de Potencia: {fp:.3f} ({caracter})", ln=True)
-    
-    if os.path.exists("fasor_v.png") and os.path.exists("fasor_i.png"):
-        pdf.ln(5)
-        pdf.image("fasor_v.png", x=12, w=85)
-        pdf.image("fasor_i.png", x=105, y=pdf.get_y()-85, w=85)
-    return pdf.output(dest="S").encode("latin-1", errors="ignore")
 
-pdf_data = construir_pdf()
-st.sidebar.markdown("---")
-st.sidebar.download_button(
-    label="📥 Exportar Relatório Técnico (.PDF)",
-    data=pdf_data,
-    file_name="relatorio_bancada_rlc.pdf",
-    mime="application/pdf"
-)
+    pdf.add_page()
+
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "RELATÓRIO TÉCNICO - RLC LAB", ln=True)
+
+    pdf.ln(10)
+
+    pdf.set_font("Arial", "", 12)
+
+    pdf.cell(0, 8, f"Topologia: {tipo}", ln=True)
+    pdf.cell(0, 8, f"Tensão RMS: {V_rms} V", ln=True)
+    pdf.cell(0, 8, f"Frequência: {freq} Hz", ln=True)
+
+    pdf.ln(5)
+
+    pdf.cell(0, 8, f"R = {R} Ω", ln=True)
+    pdf.cell(0, 8, f"L = {L_mH} mH", ln=True)
+    pdf.cell(0, 8, f"C = {C_uF} µF", ln=True)
+
+    pdf.ln(5)
+
+    pdf.cell(0, 8, f"|Z| = {abs(Z_total):.2f} Ω", ln=True)
+    pdf.cell(0, 8, f"I = {abs(I_total):.3f} A", ln=True)
+    pdf.cell(0, 8, f"FP = {FP:.3f}", ln=True)
+    pdf.cell(0, 8, f"Potência Ativa = {P:.2f} W", ln=True)
+    pdf.cell(0, 8, f"Potência Reativa = {Q:.2f} var", ln=True)
+
+    nome = "relatorio_rlc.pdf"
+
+    pdf.output(nome)
+
+    return nome
+
+with tab3:
+
+    st.subheader("Exportar Relatório Técnico")
+
+    if st.button("Gerar Relatório PDF"):
+
+        arquivo = gerar_pdf()
+
+        with open(arquivo, "rb") as f:
+
+            st.download_button(
+                label="📥 Download PDF",
+                data=f,
+                file_name=arquivo,
+                mime="application/pdf"
+            )
