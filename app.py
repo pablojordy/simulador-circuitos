@@ -25,7 +25,7 @@ st.markdown("""
         box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
     </style>
-""", unsafe_style_html=True)
+""", unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">⚡ Laboratório Virtual de Circuitos RLC Pro</div>', unsafe_style_html=True)
 st.markdown('<div class="subtitle">Projete, analise fasores e exporte relatórios técnicos de malhas em CA.</div>', unsafe_style_html=True)
